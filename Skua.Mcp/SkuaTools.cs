@@ -25,6 +25,43 @@ public static class SkuaTools
     public static Task<string> GetPlayers(ControlClient client, CancellationToken ct)
         => client.GetAsync("players", ct);
 
+    [McpServerTool(Name = "wayfer_get_inventory", ReadOnly = true)]
+    [Description("List the character's inventory: gold, AdventureCoins, used/total slots, and every item with id, name, quantity, category, equipped flag, and whether it is an AC item. Use this after wayfer_buy_item to confirm the purchase, or to check quest requirements.")]
+    public static Task<string> GetInventory(ControlClient client, CancellationToken ct)
+        => client.GetAsync("inventory", ct);
+
+    [McpServerTool(Name = "wayfer_get_map_npcs", ReadOnly = true)]
+    [Description("List every NPC and interactive object in the current map and where each one stands: cell, quests they give (id, name, whether it is a turn-in or already in progress), shop ids, and map exits they unlock. Call this before asking the user what to do or before moving; then use wayfer_jump with the NPC cell, wayfer_load_quest with a quest id, or wayfer_load_shop with a shop id. The first call for a map may take a few seconds while the map file is parsed; later calls are cached.")]
+    public static Task<string> GetMapNpcs(
+        ControlClient client,
+        [Description("Re-read the map file instead of using the cached result. Default: false.")] bool refresh = false,
+        CancellationToken ct = default)
+        => client.GetAsync($"map/npcs?refresh={(refresh ? "1" : "0")}", ct);
+
+    [McpServerTool(Name = "wayfer_get_shop", ReadOnly = true)]
+    [Description("Show the shop that is currently open in the game: id, name, and every item with cost, level, category, stack size, and merge/token requirements. Use wayfer_load_shop first if no shop is open.")]
+    public static Task<string> GetShop(ControlClient client, CancellationToken ct)
+        => client.GetAsync("shop", ct);
+
+    [McpServerTool(Name = "wayfer_load_shop")]
+    [Description("Open an AQW shop by id (get the id from wayfer_get_map_npcs) and return its name and item list. This sends a load-shop packet and changes the game UI. Loading an invalid shop id can disconnect the character, so only use ids returned by the game.")]
+    public static Task<string> LoadShop(
+        ControlClient client,
+        [Description("Shop id from wayfer_get_map_npcs, e.g. 2283.")] int id,
+        CancellationToken ct = default)
+        => client.PostAsync("shop/load", new { id }, ct);
+
+    [McpServerTool(Name = "wayfer_buy_item")]
+    [Description("Buy an item from the shop that is currently open (call wayfer_load_shop first). Use the item name or id returned by wayfer_get_shop; quantity -1 buys the shop's default bundle. The tool checks merge/token/quest requirements and inventory space before sending the buy packet, then returns the new inventory quantity. Check wayfer_get_shop's 'coins'/'cost' fields first: do not buy AdventureCoin items unless the user explicitly asks for one. Use this when a quest requires a shop item.")]
+    public static Task<string> BuyItem(
+        ControlClient client,
+        [Description("Item name as shown in wayfer_get_shop. Leave empty when using id.")] string name = "",
+        [Description("Item id from wayfer_get_shop. 0 means use the name.")] int id = 0,
+        [Description("Shop-specific item id when the same item appears multiple times. -1 = any.")] int shopItemId = -1,
+        [Description("Quantity to buy, 1-999, or -1 for the default bundle. Default: -1.")] int quantity = -1,
+        CancellationToken ct = default)
+        => client.PostAsync("shop/buy", new { name, id, shopItemId, quantity }, ct);
+
     [McpServerTool(Name = "wayfer_get_monsters", ReadOnly = true)]
     [Description("List monsters in the current cell and in the whole map, with monster id, map id, name, cell, HP, and alive state.")]
     public static Task<string> GetMonsters(ControlClient client, CancellationToken ct)

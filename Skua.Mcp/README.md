@@ -29,6 +29,11 @@ dotnet run
 
 The control API listens on `http://127.0.0.1:8766` by default.
 
+Map discovery (`wayfer_get_map_npcs`) requires Java 17+ on the game host, because
+Wayfer uses the bundled FFDec jar to read the map SWF. The first call for a new
+map takes a few seconds; the parsed result is cached in
+`~/Library/Application Support/Skua/cache/mapinfo`.
+
 ### Remote agent on the LAN
 
 Only do this on a trusted network. The API can move, attack, run scripts, and
@@ -98,8 +103,13 @@ Mac's LAN address and start Wayfer with `WAYFER_CONTROL_BIND=0.0.0.0` + a token.
 |---|---|
 | `wayfer_status` | HP/MP, level, gold, map, cell/pad, position, combat, target. |
 | `wayfer_get_map` | Map name, room id, cells, players. |
+| `wayfer_get_map_npcs` | NPCs in the current map: cell, quests (id/name/status), shops, exits. |
 | `wayfer_get_players` | Players in the room with cell/pad/position/HP. |
+| `wayfer_get_inventory` | Gold, AC, slots, and every inventory item. |
 | `wayfer_get_monsters` | Monsters in the current cell and whole map. |
+| `wayfer_get_shop` | Items in the currently open shop (cost, level, requirements). |
+| `wayfer_load_shop` | Open a shop by id and return its items. |
+| `wayfer_buy_item` | Buy an item from the open shop, with requirement/space checks. |
 | `wayfer_get_servers` | Server list and connection state. |
 | `wayfer_login` | Log in with username/password; optional server. |
 | `wayfer_select_server` | Switch/connect to a server using stored credentials. |
@@ -139,12 +149,18 @@ Mac's LAN address and start Wayfer with `WAYFER_CONTROL_BIND=0.0.0.0` + a token.
    server); otherwise `wayfer_relogin` or `wayfer_select_server`.
 1. `wayfer_status` until `playing=true`.
 2. `wayfer_join_map` with the target map/room.
-3. `wayfer_get_monsters` to find the monster and its cell.
-4. `wayfer_jump` to that cell, then `wayfer_kill_monster` (or `wayfer_attack_monster`
+3. `wayfer_get_map_npcs` to see who is in the map, which cell each NPC stands
+   in, and what they offer. Jump to that cell when the player needs to interact
+   with the NPC, or use the returned quest/shop ids directly.
+4. `wayfer_get_monsters` to find the monster and its cell.
+5. `wayfer_jump` to that cell, then `wayfer_kill_monster` (or `wayfer_attack_monster`
    plus `wayfer_status` for non-blocking control).
-5. `wayfer_rest` when HP/MP is low.
-6. `wayfer_get_players` + `wayfer_goto_player` to follow another player.
-7. For repeatable work, `wayfer_write_script` + `wayfer_run_script`, then check
+6. For a shop item required by a quest: `wayfer_load_shop` with the shop id from
+   `wayfer_get_map_npcs`, `wayfer_get_shop` to pick the item, then
+   `wayfer_buy_item`.
+7. `wayfer_rest` when HP/MP is low.
+8. `wayfer_get_players` + `wayfer_goto_player` to follow another player.
+9. For repeatable work, `wayfer_write_script` + `wayfer_run_script`, then check
    `wayfer_get_script_status`/`wayfer_get_script_logs` instead of polling every
    game action. Use `wayfer_pause_script`/`wayfer_resume_script` for a temporary
    stop and `wayfer_stop_script` to end it.

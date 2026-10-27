@@ -7,6 +7,7 @@ surface. This guide covers the normal desktop workflow and the AI-agent setup.
 
 - macOS for the game host (validated)
 - .NET SDK 10 (`~/.dotnet`)
+- Java 17+ on `PATH` (or `JAVA_HOME`) for map NPC/quest/shop discovery
 - AQW assets in `Skua.App.Avalonia/` (`skua.swf`, `wwwroot/ruffle`)
 
 Linux can run the MCP agent and Avalonia UI, but the native game host needs a
@@ -94,8 +95,8 @@ exposing the port:
 ssh -L 8766:127.0.0.1:8766 user@mac
 ```
 
-The MCP tools cover login, server selection, logout, movement, map/room
-joining, combat, quests, and script lifecycle. See
+The MCP tools cover login, server selection, logout, map contents, movement,
+map/room joining, combat, quests, shops, and script lifecycle. See
 [`Skua.Mcp/README.md`](./Skua.Mcp/README.md) for the full tool table and client
 configuration.
 
@@ -122,6 +123,31 @@ wayfer_jump cell="<monster-cell>" pad="Spawn"
 wayfer_kill_monster monster="<name-or-map-id>"
 wayfer_rest full=true
 ```
+
+### See what is in the current map
+
+```text
+wayfer_get_map_npcs
+```
+
+Returns every placed NPC with its cell, quest ids and names, shop ids, map exits,
+and whether a quest is already in progress. Use the cell with `wayfer_jump` when
+the character needs to stand next to the NPC.
+
+### Buy an item for a quest
+
+```text
+wayfer_get_map_npcs
+wayfer_load_shop   id=<shop-id-from-the-npc>
+wayfer_get_shop
+wayfer_buy_item    name="<item-name>" quantity=1
+wayfer_get_inventory
+```
+
+`wayfer_buy_item` checks merge/token/quest requirements and inventory space
+before sending the buy packet. Check the item's `coins`/`cost` fields first:
+AdventureCoin items are real-money currency, so only buy them if that is really
+intended.
 
 ### Quests
 
@@ -170,4 +196,10 @@ If a future game update needs `BitmapData.draw`, try `?renderer=wgpu-webgl`.
   `WAYFER_CONTROL_URL`.
 - If the character does not appear, check that smooth background is on and the
   renderer is `webgl`.
+- If `wayfer_get_map_npcs` fails with `java_missing`, install Java 17+ or set
+  `JAVA_HOME`; FFDec itself ships with the app.
+- The first map-NPC call for a new map takes a few seconds while FFDec parses the
+  map SWF. Later calls use
+  `~/Library/Application Support/Skua/cache/mapinfo` and are instant. Pass
+  `refresh=true` after a game update.
 - Check the app console for Ruffle or relay errors.

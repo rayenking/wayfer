@@ -39,5 +39,6 @@
     <Content Include="spider.swf" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="QuestData.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="AdvancedSkills.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\FFDec\**\*.*" Link="FFDec\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

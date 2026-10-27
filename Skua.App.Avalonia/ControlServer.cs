@@ -3,12 +3,15 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Globalization;
+using Newtonsoft.Json.Linq;
 using Skua.Core.Interfaces;
 using Skua.Core.Models;
 using Skua.Core.Models.Items;
 using Skua.Core.Models.Monsters;
 using Skua.Core.Models.Players;
 using Skua.Core.Models.Quests;
+using Skua.Core.Models.Shops;
 
 namespace Skua.App.Avalonia;
 
@@ -33,6 +36,7 @@ public sealed class ControlServer : IDisposable
     private readonly IScriptInterface _bot;
     private readonly IScriptManager _scriptManager;
     private readonly ILogService _logService;
+    private readonly MapInfoService _mapInfo;
     private readonly string _scriptsRoot;
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _cts = new();
@@ -52,6 +56,7 @@ public sealed class ControlServer : IDisposable
         _bot = bot;
         _scriptManager = scriptManager;
         _logService = logService;
+        _mapInfo = new MapInfoService(bot);
         _scriptsRoot = Path.GetFullPath(ClientFileSources.SkuaScriptsDIR);
         _token = (ReadEnv("WAYFER_CONTROL_TOKEN", "SKUA_CONTROL_TOKEN") ?? string.Empty).Trim();
 
@@ -188,9 +193,12 @@ public sealed class ControlServer : IDisposable
                 "/" or "/health" => Health(),
                 "/state" => BuildState(),
                 "/map" => BuildMap(),
+                "/map/npcs" => await BuildMapNpcsAsync(context, ct).ConfigureAwait(false),
                 "/players" => BuildPlayers(),
+                "/inventory" => BuildInventory(),
                 "/monsters" => BuildMonsters(),
                 "/servers" => BuildServers(),
+                "/shop" => BuildShop(),
                 "/quests" => BuildQuests(),
                 "/quest" => BuildQuest(QueryInt(context, "id")),
                 "/quests/cached" => BuildCachedQuests(context),
@@ -222,6 +230,8 @@ public sealed class ControlServer : IDisposable
             "/logout" => await LogoutAsync(ct).ConfigureAwait(false),
             "/select-server" => await SelectServerAsync(context, ct).ConfigureAwait(false),
             "/quests/load" => await LoadQuestsAsync(context, ct).ConfigureAwait(false),
+            "/shop/load" => await LoadShopAsync(context, ct).ConfigureAwait(false),
+            "/shop/buy" => await BuyShopItemAsync(context, ct).ConfigureAwait(false),
             "/quests/accept" => await AcceptQuestAsync(context, ct).ConfigureAwait(false),
             "/quests/complete" => await CompleteQuestAsync(context, ct).ConfigureAwait(false),
             "/quests/abandon" => await AbandonQuestAsync(context, ct).ConfigureAwait(false),
@@ -1083,6 +1093,177 @@ public sealed class ControlServer : IDisposable
         };
     }
 
+    private async Task<object> BuildMapNpcsAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        RequirePlaying();
+        bool refresh = context.Request.QueryString["refresh"] is "1" or "true";
+
+        MapInfo info;
+        try
+        {
+            info = await _mapInfo.GetCurrentMapAsync(refresh, ct).ConfigureAwait(false);
+        }
+        catch (MapInfoException ex)
+        {
+            throw new ControlException(ex.Code == "map_not_loaded" ? 409 : 502, $"{ex.Code}: {ex.Message}");
+        }
+
+        string currentCell = Safe(() => _bot.Player.Cell, string.Empty);
+        int[] questIds = info.Npcs.SelectMany(n => n.Quests.Select(q => q.Id)).Distinct().ToArray();
+        Dictionary<int, string> questNames = new();
+        if (questIds.Length > 0)
+        {
+            List<QuestData> quests = Safe(() => _bot.Quests.GetCachedQuests(questIds), new List<QuestData>());
+            foreach (QuestData quest in quests)
+                questNames[quest.ID] = System.Net.WebUtility.HtmlDecode(quest.Name ?? string.Empty);
+        }
+
+        Dictionary<int, string> shopNames = new();
+        foreach (ShopInfo shop in Safe(() => _bot.Shops.LoadedCache, new List<ShopInfo>()))
+            shopNames[shop.ID] = shop.Name;
+
+        return new
+        {
+            map = info.Map,
+            fullName = Safe(() => _bot.Map.FullName, string.Empty),
+            roomId = info.RoomId,
+            filePath = info.FilePath,
+            cell = currentCell,
+            cells = info.Cells,
+            cached = info.FromCache,
+            npcs = info.Npcs.Select(npc => new
+            {
+                name = npc.Name,
+                cells = npc.Cells,
+                inCurrentCell = npc.Cells.Any(c => string.Equals(c, currentCell, StringComparison.OrdinalIgnoreCase)),
+                quests = npc.Quests.Select(q => new
+                {
+                    id = q.Id,
+                    name = questNames.GetValueOrDefault(q.Id),
+                    turnIn = q.TurnIn,
+                    inProgress = Safe(() => _bot.Quests.IsInProgress(q.Id), false)
+                }).ToList(),
+                shops = npc.Shops.Select(s => new
+                {
+                    id = s.Id,
+                    name = shopNames.GetValueOrDefault(s.Id)
+                }).ToList(),
+                joins = npc.Joins.Select(j => new { map = j.Map, cell = j.Cell }).ToList(),
+                hasDialogue = npc.HasDialogue
+            }).ToList()
+        };
+    }
+
+    private object BuildShop()
+    {
+        RequirePlaying();
+        return new
+        {
+            loaded = Safe(() => _bot.Shops.IsLoaded, false),
+            id = Safe(() => _bot.Shops.ID, 0),
+            name = Safe(() => _bot.Shops.Name, string.Empty),
+            items = Safe(() => _bot.Shops.Items, new List<ShopItem>()).Select(ToShopItemDto).ToList()
+        };
+    }
+
+    private async Task<object?> LoadShopAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        ShopLoadRequest request = await ReadJsonAsync<ShopLoadRequest>(context, ct).ConfigureAwait(false);
+        if (request.Id is < 1 or > 1_000_000)
+            throw new ControlException(400, "id must be a positive shop id");
+
+        return await RunActionAsync(() =>
+        {
+            RequirePlaying();
+            _bot.Shops.Load(request.Id);
+            return BuildShop();
+        }, ct).ConfigureAwait(false);
+    }
+
+    private async Task<object?> BuyShopItemAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        ShopBuyRequest request = await ReadJsonAsync<ShopBuyRequest>(context, ct).ConfigureAwait(false);
+        string? name = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
+        int id = request.Id;
+        if (name is null && id <= 0)
+            throw new ControlException(400, "name or id is required");
+        if (name is { Length: > 100 })
+            throw new ControlException(400, "name is too long");
+        if (request.Quantity is 0 or < -1 or > 999)
+            throw new ControlException(400, "quantity must be -1 (bundle) or between 1 and 999");
+
+        return await RunActionAsync(() =>
+        {
+            RequirePlaying();
+            if (!Safe(() => _bot.Shops.IsLoaded, false))
+                throw new ControlException(409, "shop_not_loaded: call wayfer_load_shop first");
+
+            ShopItem? item = Safe(() => _bot.Shops.Items.FirstOrDefault(i =>
+                    (id > 0 ? i.ID == id : i.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) &&
+                    (request.ShopItemId <= 0 || i.ShopItemID == request.ShopItemId)),
+                null);
+
+            if (item is null)
+                throw new ControlException(404, "shop_item_not_found");
+
+            int quantity = request.Quantity;
+            List<string> unmet = Safe(() => _bot.Shops.GetUnmetPurchaseRequirements(item, quantity), new List<string>());
+            if (unmet.Count > 0)
+                throw new ControlException(409, "purchase_requirements_unmet: " + string.Join("; ", unmet));
+
+            int bundle = quantity == -1 ? Math.Max(1, item.Quantity) : quantity;
+            if (!Safe(() => _bot.Inventory.HasSpaceFor(item, bundle), true))
+                throw new ControlException(409, "inventory_full");
+
+            int before = ReadInventoryRows().FirstOrDefault(i => i.Id == item.ID)?.Quantity ?? 0;
+            int shopItemId = request.ShopItemId > 0 ? request.ShopItemId : item.ShopItemID;
+            if (id > 0)
+                _bot.Shops.BuyItem(id, shopItemId, quantity);
+            else
+                _bot.Shops.BuyItem(item.Name, quantity);
+            int after = ReadInventoryRows().FirstOrDefault(i => i.Id == item.ID)?.Quantity ?? 0;
+
+            return new
+            {
+                sent = true,
+                bought = after > before,
+                item = new
+                {
+                    id = item.ID,
+                    shopItemId,
+                    name = item.Name,
+                    quantityBefore = before,
+                    quantityAfter = after
+                },
+                shop = BuildShop()
+            };
+        }, ct).ConfigureAwait(false);
+    }
+
+    private static object ToShopItemDto(ShopItem item)
+    {
+        return new
+        {
+            id = item.ID,
+            shopItemId = item.ShopItemID,
+            name = item.Name,
+            description = item.Description,
+            quantity = item.Quantity,
+            maxStack = item.MaxStack,
+            cost = item.Cost,
+            level = item.Level,
+            upgrade = item.Upgrade,
+            coins = item.Coins,
+            category = item.CategoryString,
+            faction = item.Faction,
+            requiredReputation = item.RequiredReputation,
+            tokenId = item.TokenID,
+            tokenName = item.TokenName,
+            tokenQuantity = item.TokenQuantity,
+            requirements = item.Requirements.Select(r => new { id = r.ID, name = r.Name, quantity = r.Quantity }).ToList()
+        };
+    }
+
     private object BuildPlayers()
     {
         return new
@@ -1090,6 +1271,102 @@ public sealed class ControlServer : IDisposable
             map = Safe(() => _bot.Map.Name, string.Empty),
             players = ReadPlayers()
         };
+    }
+
+    private object BuildInventory()
+    {
+        RequirePlaying();
+        List<InventoryRow> rows = ReadInventoryRows();
+        return new
+        {
+            gold = Safe(() => _bot.Player.Gold, 0),
+            coins = Safe(() => _bot.Player.Coins, 0),
+            usedSlots = Safe(() => _bot.Inventory.UsedSlots, 0),
+            slots = Safe(() => _bot.Inventory.Slots, 0),
+            items = rows.Select(item => new
+            {
+                id = item.Id,
+                name = item.Name,
+                quantity = item.Quantity,
+                category = item.Category,
+                equipped = item.Equipped,
+                upgrade = item.Upgrade,
+                coins = item.Coins,
+                maxStack = item.MaxStack
+            }).ToList()
+        };
+    }
+
+    private List<InventoryRow> ReadInventoryRows()
+    {
+        // The generated ObjectBinding for world.myAvatar.items can stay empty
+        // on the Ruffle host. Read the avatar's item array directly and tolerate
+        // the game's float-encoded ids (e.g. "525329207.0").
+        string? raw = Safe(() => _bot.Flash.GetGameObject("world.myAvatar.items"), null);
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            try
+            {
+                JArray array = JArray.Parse(raw);
+                return array.OfType<JObject>().Select(item => new InventoryRow
+                {
+                    Id = JsonInt(item["ItemID"]),
+                    Name = item["sName"]?.ToString() ?? string.Empty,
+                    Quantity = JsonInt(item["iQty"]),
+                    Category = item["sType"]?.ToString() ?? string.Empty,
+                    Equipped = JsonBool(item["bEquip"]),
+                    Upgrade = JsonBool(item["bUpg"]),
+                    Coins = JsonBool(item["bCoins"]),
+                    MaxStack = JsonInt(item["iStk"])
+                }).ToList();
+            }
+            catch
+            {
+                // Fall through to the binding below.
+            }
+        }
+
+        return Safe(() => _bot.Inventory.Items, new List<InventoryItem>())
+            .Select(item => new InventoryRow
+            {
+                Id = item.ID,
+                Name = item.Name,
+                Quantity = item.Quantity,
+                Category = item.CategoryString,
+                Equipped = item.Equipped,
+                Upgrade = item.Upgrade,
+                Coins = item.Coins,
+                MaxStack = item.MaxStack
+            })
+            .ToList();
+    }
+
+    private static int JsonInt(JToken? token)
+    {
+        if (token is null || token.Type == JTokenType.Null)
+            return 0;
+        if (token.Type == JTokenType.Integer)
+            return token.Value<int>();
+        if (token.Type == JTokenType.Float)
+            return (int)token.Value<double>();
+
+        string text = token.ToString();
+        if (int.TryParse(text, out int value))
+            return value;
+        return double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double number)
+            ? (int)number
+            : 0;
+    }
+
+    private static bool JsonBool(JToken? token)
+    {
+        if (token is null || token.Type == JTokenType.Null)
+            return false;
+        if (token.Type == JTokenType.Boolean)
+            return token.Value<bool>();
+
+        string text = token.ToString();
+        return text == "1" || text.Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
     private List<object> ReadPlayers()
@@ -1292,6 +1569,7 @@ public sealed class ControlServer : IDisposable
         _cts.Dispose();
         _actionGate.Dispose();
         _scriptGate.Dispose();
+        _mapInfo.Dispose();
     }
 
     private sealed class ControlException : Exception
@@ -1373,6 +1651,31 @@ public sealed class ControlServer : IDisposable
     private sealed class LoadQuestsRequest
     {
         public int[]? Ids { get; set; }
+    }
+
+    private sealed class ShopLoadRequest
+    {
+        public int Id { get; set; }
+    }
+
+    private sealed class ShopBuyRequest
+    {
+        public string? Name { get; set; }
+        public int Id { get; set; }
+        public int ShopItemId { get; set; } = -1;
+        public int Quantity { get; set; } = -1;
+    }
+
+    private sealed class InventoryRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public string Category { get; set; } = string.Empty;
+        public bool Equipped { get; set; }
+        public bool Upgrade { get; set; }
+        public bool Coins { get; set; }
+        public int MaxStack { get; set; }
     }
 
     private sealed class QuestActionRequest

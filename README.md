@@ -27,8 +27,12 @@ Wayfer is built on [Skua](https://github.com/auqw/Skua).
 - **C# scripting** — scripts live in
   `~/Library/Application Support/Skua/Scripts` and can be written, run, paused,
   resumed, or stopped from the app.
-- **MCP for AI agents** — 36 tools for login, server switching, logout, movement,
-  map/room joining, combat, quests, and script lifecycle.
+- **MCP for AI agents** — 41 tools for login, server switching, logout, map
+  contents, movement, map/room joining, combat, quests, shops, inventory, and
+  script lifecycle.
+- **Map awareness** — reads the live map SWF and tells the agent which NPCs are
+  in the room, which cell they stand in, the quests they offer, and the shops
+  they open.
 - **Lightweight rendering** — Ruffle `webgl`, AQW smooth background, and
   `MEDIUM` quality by default (roughly 53–60 FPS at 960×600 on Apple Silicon).
 
@@ -45,6 +49,7 @@ tunnel.
 ## Requirements
 
 - .NET SDK 10 (`~/.dotnet`)
+- Java 17+ (`java` on `PATH`, or `JAVA_HOME`) for map NPC/quest/shop discovery
 - macOS for the game host
 - AQW assets shipped in `Skua.App.Avalonia/` (`skua.swf`, `wwwroot/ruffle`)
 
@@ -88,10 +93,11 @@ AI agent (Linux/macOS)
 The tools cover:
 
 - login / select server / logout / relogin
-- status, map, players, monsters, servers
+- status, map, map NPCs, players, monsters, servers
 - join room, jump, walk, goto player
 - attack, kill, cancel attack, leave combat, rest
 - quest load / accept / complete / abandon
+- shop load / inspect / buy
 - script write / run / pause / resume / stop / logs
 
 See [`Skua.Mcp/README.md`](./Skua.Mcp/README.md) for the client config, full tool
@@ -132,6 +138,8 @@ If a future game update requires `BitmapData.draw`, try `?renderer=wgpu-webgl`.
 
 - `LocalGameServer` — proxies `/ga/*` to game.aq.com, rewrites the server list to
   the local WebSocket relay, and unpacks compressed `Z` packets.
+- `MapInfoService` — downloads the active map SWF, decompiles it with FFDec, and
+  extracts NPC cells, quest ids, shop ids, and map exits (cached per map file).
 - `WebFlashUtil` — bridges ExternalInterface calls between the page and
   `/skua.swf`.
 - `Skua.Avalonia` — cross-platform dialogs, windows, clipboard, hotkeys, theme,
