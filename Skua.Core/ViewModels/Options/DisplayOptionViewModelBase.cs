@@ -1,4 +1,5 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Skua.Core.ViewModels;
 
@@ -62,6 +63,12 @@ public partial class DisplayOptionItemViewModelBase : ObservableObject
     public string Description { get; }
     public string Tag { get; }
     public string? SuffixText { get; set; }
+
+    /// <summary>
+    /// Optional command executed by the option control. Bool options pass
+    /// their checked state; text options pass the text box contents.
+    /// </summary>
+    public virtual IRelayCommand? Command => null;
 
     [ObservableProperty]
     private object? _value;

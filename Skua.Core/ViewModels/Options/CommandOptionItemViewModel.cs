@@ -57,5 +57,5 @@ public class CommandOptionItemViewModel : DisplayOptionItemViewModelBase
         Command = command;
     }
 
-    public IRelayCommand Command { get; }
+    public override IRelayCommand Command { get; }
 }

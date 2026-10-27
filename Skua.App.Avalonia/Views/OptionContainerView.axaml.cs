@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Skua.App.Avalonia.Views;
 
@@ -23,6 +24,7 @@ public static class TypeConverters
     public static IValueConverter IsBool { get; } = new TypeCheckConverter(typeof(bool));
     public static IValueConverter IsEnum { get; } = new TypeCheckConverter(null, isEnum: true);
     public static IValueConverter IsOther { get; } = new TypeCheckConverter(null, isOther: true);
+    public static IValueConverter IsAction { get; } = new TypeCheckConverter(typeof(IRelayCommand));
 
     private class TypeCheckConverter : IValueConverter
     {
@@ -42,7 +44,7 @@ public static class TypeConverters
             if (value is not Type t) return false;
             if (_type != null) return t == _type;
             if (_isEnum) return t.IsEnum;
-            if (_isOther) return t != typeof(bool) && !t.IsEnum;
+            if (_isOther) return t != typeof(bool) && !t.IsEnum && !typeof(IRelayCommand).IsAssignableFrom(t);
             return false;
         }
 
