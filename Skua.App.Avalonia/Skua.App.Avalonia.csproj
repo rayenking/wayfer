@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <Product>Wayfer</Product>
+    <AssemblyTitle>Wayfer</AssemblyTitle>
+    <Description>Wayfer — an AQW desktop client and AI control surface built on Skua.</Description>
+    <Company>Wayfer</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.1" />
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Skua.Avalonia\Skua.Avalonia.csproj" />
+    <ProjectReference Include="..\Skua.Core\Skua.Core.csproj" />
+    <ProjectReference Include="..\Skua.Core.Interfaces\Skua.Core.Interfaces.csproj" />
+    <ProjectReference Include="..\Skua.Core.Models\Skua.Core.Models.csproj" />
+    <ProjectReference Include="..\Skua.Core.Utils\Skua.Core.Utils.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/WayferIcon.png" />
+    <Content Include="wwwroot/**/*.*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="skua.swf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="spider.swf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="QuestData.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="AdvancedSkills.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

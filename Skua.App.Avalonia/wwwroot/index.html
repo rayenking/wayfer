@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Skua</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  #container { width: 100%; height: 100%; }
+  #game { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<script>
+  "use strict";
+
+  const QUERY = new URLSearchParams(location.search);
+  const PLAIN = QUERY.has("plain");
+  const HOOK = QUERY.has("hook");
+  // Performance tuning knobs (also used by the headless A/B probes):
+  //   ?renderer=webgl|wgpu-webgl|webgpu|canvas
+  //   ?smooth=0  keep AQW's cached map bitmap (needs a BitmapData.draw-capable
+  //              renderer; the default vanilla webgl path must skip it)
+  //   ?lowq=0    keep the game's stage quality on HIGH
+  // Defaults are the fast path: vanilla webgl + smooth background + MEDIUM.
+  // wgpu-webgl is the fallback if a future game update needs BitmapData.draw
+  // somewhere else: ?renderer=wgpu-webgl
+  const RENDERER = QUERY.get("renderer") || "webgl";
+  const SMOOTH_BG = QUERY.get("smooth") !== "0";
+  const LOW_QUALITY = QUERY.get("lowq") !== "0";
+  // ?verbose raises Ruffle's log level to info so the client's [Avatar]/[Map]
+  // trace() diagnostics reach the host log. Normal runs stay at warn because
+  // the audio buffer trace fires every frame and floods the page.
+  const VERBOSE = QUERY.has("verbose");
+
+  // Forward all page console output and errors to the host so Ruffle
+  // panics and AS3 errors are visible outside the webview.
+  const origLog = console.log.bind(console);
+  window.__pageLog = [];
+  function fwdConsole(kind, args) {
+    const line = Array.from(args).map(String).join(" ");
+    window.__pageLog.push("[" + kind + "] " + line);
+    // keep the diagnostic buffer bounded; unbounded growth lags the page
+    const cap = VERBOSE ? 20000 : 500;
+    if (window.__pageLog.length > cap)
+      window.__pageLog.splice(0, window.__pageLog.length - cap);
+    try { invokeCSharpAction(JSON.stringify({ name: "console." + kind, args: [line] })); } catch (e) { }
+  }
+  for (const kind of ["log", "info", "warn", "error", "debug"]) {
+    const orig = console[kind].bind(console);
+    console[kind] = function () { orig.apply(null, arguments); fwdConsole(kind, arguments); };
+  }
+  window.addEventListener("error", (e) => fwdConsole("error", [e.message + " @" + e.filename + ":" + e.lineno]));
+  window.addEventListener("unhandledrejection", (e) => fwdConsole("error", ["unhandledrejection: " + String(e.reason)]));
+
+  if (HOOK && !PLAIN) {
+    const store = new WeakMap();
+    Object.defineProperty(Object.prototype, "onCallbackAvailable", {
+      configurable: true,
+      get() { return store.get(this); },
+      set(v) {
+        const wrapped = (...args) => {
+          window.__pageLog.push("[HOOK] onCallbackAvailable CALLED: " + String(args[0]));
+          try { return v.apply(this, args); }
+          catch (err) { window.__pageLog.push("[HOOK] installer failed: " + String(err)); }
+        };
+        store.set(this, wrapped);
+        window.__pageLog.push("[HOOK] onCallbackAvailable installed on inner player");
+      }
+    });
+  }
+</script>
+<script>
+  window.RufflePlayer = window.RufflePlayer || {};
+  // Flash sockets (SmartFox world connections) are bridged by the local
+  // WebSocket relay: login/now rewrites sIP->127.0.0.1 iPort->20000+i and the
+  // server pipes /wsrelay/{port} to the real host.
+  const SOCKET_PORT_BASE = 20000;
+  const socketProxy = [];
+  for (let i = 0; i < 48; i++) {
+    const port = SOCKET_PORT_BASE + i;
+    socketProxy.push({ host: "127.0.0.1", port: port, protocol: "ws", proxyUrl: "ws://127.0.0.1:8765/wsrelay/" + port });
+  }
+  // Skua.Core's server API (used by scripts/relogin) still holds the real
+  // SmartFox host/IP from content.aq.com, so also proxy the original
+  // sock7/sock8 endpoints. LocalGameServer registers the same list on
+  // 20100..20115.
+  const DIRECT_SERVERS = [
+    ["sock7.aq.com", 5588], ["sock7.aq.com", 5589], ["sock7.aq.com", 5591],
+    ["sock7.aq.com", 5592], ["sock7.aq.com", 5593], ["sock7.aq.com", 5594],
+    ["sock8.aq.com", 5588], ["sock8.aq.com", 5589], ["sock8.aq.com", 5590],
+    ["sock8.aq.com", 5591], ["sock8.aq.com", 5593],
+    ["euro.aqw.artix.com", 5588], ["asia.game.artix.com", 5588]
+  ];
+  DIRECT_SERVERS.forEach(([host, port], i) => {
+    const local = 20100 + i;
+    socketProxy.push({ host: host, port: port, protocol: "ws", proxyUrl: "ws://127.0.0.1:8765/wsrelay/" + local });
+  });
+  const COMMON_CONFIG = {
+    autoplay: "on",
+    unmuteOverlay: "hidden",
+    contextMenu: "off",
+    splashScreen: false,
+    letterbox: "off",
+    scale: "showAll",
+    // AQW composites the map/avatars via BitmapData.draw. The vanilla
+    // "webgl" and "canvas" backends do not implement it (Ruffle throws
+    // "Render backend does not support BitmapData.draw", which aborts
+    // World.cellSetup before playerInit and leaves world.myAvatar null).
+    // "wgpu-webgl" is Ruffle's feature-complete web backend. The lighter
+    // "webgl" backend is usable with ?smooth=1 if raw FPS matters more.
+    preferredRenderer: RENDERER,
+    // trace spams an audio-buffer line every frame and bloats the log.
+    logLevel: VERBOSE ? "info" : "warn",
+    socketProxy: socketProxy
+  };
+  window.RufflePlayer.config = PLAIN ? {
+    ...COMMON_CONFIG,
+    logLevel: "info"
+  } : {
+    ...COMMON_CONFIG,
+    allowScriptAccess: true,
+    pauseWhenHidden: false,
+    warnOnUnsupportedContent: false
+  };
+</script>
+<script src="/ruffle/ruffle.js"></script>
+<script>
+  "use strict";
+
+  const ruffle = window.RufflePlayer.newest();
+  const player = ruffle.createPlayer();
+  player.id = "game";
+  document.getElementById("container").appendChild(player);
+  player.load("/skua.swf");
+  postToSharp("page-ready", []);
+
+  // ---------- Skua bridge: AS3 -> host ----------
+  // skua.swf calls ExternalInterface.call(name, args...); Ruffle maps that to
+  // the JS function registered under `name` on window. Forward to C# via
+  // invokeCSharpAction (provided by the NativeWebView host).
+  function postToSharp(name, args) {
+    const payload = JSON.stringify({ name: name, args: args });
+    try {
+      invokeCSharpAction(payload);
+    } catch (e) {
+      console.log("[skua-js] post failed:", name, String(e));
+    }
+  }
+
+  window["pre-load"] = function () {
+    postToSharp("pre-load", []);
+    // Mirror the Windows host: on 'pre-load' it calls setBackgroundValues
+    // with the configured background (default Generic2.swf); without this
+    // skua.swf falls back to hideme.swf which 404s upstream and stalls the
+    // game's world UI construction.
+    try {
+      player["setBackgroundValues"]("Generic2.swf", "");
+      console.log("[skua-js] setBackgroundValues(Generic2.swf)");
+    } catch (e) {
+      console.log("[skua-js] setBackgroundValues failed: " + String(e));
+    }
+  };
+  window["loaded"] = function () { postToSharp("loaded", []); };
+  window["pext"] = function (packet) { postToSharp("pext", [packet]); };
+  window["openWebsite"] = function (url) { postToSharp("openWebsite", [url]); };
+
+  // ---------- Skua bridge: host -> AS3 ----------
+  // Ruffle exposes ExternalInterface.addCallback functions as methods on the
+  // player element, so the host can invoke them directly.
+  window.skuaCall = function (fn, argsJson) {
+    const args = JSON.parse(argsJson || "[]");
+    try {
+      const result = player[fn].apply(player, args);
+      return JSON.stringify(result === undefined ? null : result);
+    } catch (e) {
+      return JSON.stringify({ __skuaError: String(e) });
+    }
+  };
+
+  // Optional runtime tuning for the lighter renderers. The game reads
+  // bSmoothBG during World.cellSetup, so it must be set before the first
+  // map arrives (i.e. while the login screen is still up).
+  function tuneRuntime() {
+    if (!SMOOTH_BG && !LOW_QUALITY) return;
+    let n = 0;
+    let smoothDone = false;
+    const timer = setInterval(() => {
+      n++;
+      if (SMOOTH_BG && !smoothDone) {
+        try {
+          const inner = JSON.parse(window.skuaCall("getGameObject", JSON.stringify(["litePreference.data.bSmoothBG"])));
+          // The flag is often null/undefined before the player opens the
+          // options screen; treat anything that is not true as "off".
+          if ((typeof inner === "string" || typeof inner === "boolean") && inner !== "true" && inner !== true) {
+            window.skuaCall("setGameObject", JSON.stringify(["litePreference.data.bSmoothBG", true]));
+            smoothDone = true;
+            console.log("[skua-js] forced bSmoothBG=true");
+          }
+        } catch (e) {}
+      }
+      if (LOW_QUALITY && n % 5 === 0) {
+        try {
+          window.skuaCall("setGameObject", JSON.stringify(["userPreference.data.quality", "MEDIUM"]));
+          window.skuaCall("setGameObject", JSON.stringify(["stage.quality", "MEDIUM"]));
+        } catch (e) {}
+      }
+      if (n > 600) clearInterval(timer);
+    }, 200);
+  }
+
+  // skua.swf registers its callbacks when it reaches the stage; poll until
+  // loadClient exists, then kick off game loading (the WPF host did this
+  // right after initializing the Flash control).
+  let tries = 0;
+  const bootTimer = setInterval(() => {
+    tries++;
+    if (typeof player["loadClient"] === "function") {
+      clearInterval(bootTimer);
+      console.log("[skua-js] loadClient available, booting game");
+      postToSharp("flash-ready", []);
+      // The Windows host answers the 'pre-load' ExternalInterface event by
+      // calling setBackgroundValues; dashed event names never reach JS in
+      // Ruffle, so set the background up front instead. Without it skua.swf
+      // defaults to hideme.swf which 404s and stalls the world UI.
+      try {
+        player["setBackgroundValues"]("Generic2.swf", "");
+        console.log("[skua-js] setBackgroundValues(Generic2.swf) OK");
+      } catch (e) {
+        console.log("[skua-js] setBackgroundValues failed: " + String(e));
+      }
+      player["loadClient"]();
+      tuneRuntime();
+    } else if (tries > 120) {
+      clearInterval(bootTimer);
+      console.log("[skua-js] loadClient never appeared");
+      postToSharp("flash-error", ["loadClient not registered by skua.swf"]);
+    }
+  }, 250);
+</script>
+</body>
+</html>
