@@ -124,6 +124,11 @@ public interface IScriptShop
     void LoadArmourCustomizer();
 
     /// <summary>
+    /// Closes the currently open shop or popup.
+    /// </summary>
+    void Close();
+
+    /// <summary>
     /// Loads the specified hair shop in game.
     /// </summary>
     /// <param name="id">ID of the hair shop to be loaded.</param>

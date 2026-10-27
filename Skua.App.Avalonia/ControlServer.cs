@@ -232,6 +232,7 @@ public sealed class ControlServer : IDisposable
             "/quests/load" => await LoadQuestsAsync(context, ct).ConfigureAwait(false),
             "/shop/load" => await LoadShopAsync(context, ct).ConfigureAwait(false),
             "/shop/buy" => await BuyShopItemAsync(context, ct).ConfigureAwait(false),
+            "/shop/close" => CloseShop(),
             "/quests/accept" => await AcceptQuestAsync(context, ct).ConfigureAwait(false),
             "/quests/complete" => await CompleteQuestAsync(context, ct).ConfigureAwait(false),
             "/quests/abandon" => await AbandonQuestAsync(context, ct).ConfigureAwait(false),
@@ -1238,6 +1239,13 @@ public sealed class ControlServer : IDisposable
                 shop = BuildShop()
             };
         }, ct).ConfigureAwait(false);
+    }
+
+    private object CloseShop()
+    {
+        RequirePlaying();
+        _bot.Shops.Close();
+        return new { closed = true };
     }
 
     private static object ToShopItemDto(ShopItem item)

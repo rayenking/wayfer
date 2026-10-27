@@ -110,6 +110,7 @@ Mac's LAN address and start Wayfer with `WAYFER_CONTROL_BIND=0.0.0.0` + a token.
 | `wayfer_get_shop` | Items in the currently open shop (cost, level, requirements). |
 | `wayfer_load_shop` | Open a shop by id and return its items. |
 | `wayfer_buy_item` | Buy an item from the open shop, with requirement/space checks. |
+| `wayfer_close_shop` | Close the open shop or game popup. |
 | `wayfer_get_servers` | Server list and connection state. |
 | `wayfer_login` | Log in with username/password; optional server. |
 | `wayfer_select_server` | Switch/connect to a server using stored credentials. |

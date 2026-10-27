@@ -17,6 +17,7 @@ public class GameOptionsViewModel : BotControlViewModelBase
         _servers = servers;
         _options = options;
         GameOptions = gameOptions;
+        _selectedServer = options.ReloginServer;
         ResetOptionsCommand = new RelayCommand(_options.Reset);
         ResetDefaultOptionsCommand = new RelayCommand(_options.ResetToDefault);
         SaveOptionsCommand = new RelayCommand(_options.Save);

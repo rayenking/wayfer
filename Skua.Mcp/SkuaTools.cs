@@ -62,6 +62,11 @@ public static class SkuaTools
         CancellationToken ct = default)
         => client.PostAsync("shop/buy", new { name, id, shopItemId, quantity }, ct);
 
+    [McpServerTool(Name = "wayfer_close_shop", ReadOnly = false)]
+    [Description("Close the currently open shop or game popup. Use this after checking a shop or buying an item so the game UI is not left covering the screen.")]
+    public static Task<string> CloseShop(ControlClient client, CancellationToken ct)
+        => client.PostAsync("shop/close", new { }, ct);
+
     [McpServerTool(Name = "wayfer_get_monsters", ReadOnly = true)]
     [Description("List monsters in the current cell and in the whole map, with monster id, map id, name, cell, HP, and alive state.")]
     public static Task<string> GetMonsters(ControlClient client, CancellationToken ct)

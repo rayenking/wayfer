@@ -27,7 +27,7 @@ Wayfer is built on [Skua](https://github.com/auqw/Skua).
 - **C# scripting** — scripts live in
   `~/Library/Application Support/Skua/Scripts` and can be written, run, paused,
   resumed, or stopped from the app.
-- **MCP for AI agents** — 41 tools for login, server switching, logout, map
+- **MCP for AI agents** — 42 tools for login, server switching, logout, map
   contents, movement, map/room joining, combat, quests, shops, inventory, and
   script lifecycle.
 - **Map awareness** — reads the live map SWF and tells the agent which NPCs are
@@ -131,6 +131,15 @@ For debugging, append query parameters to the game URL:
 - `?smooth=0` (keep the cached map bitmap; requires a `BitmapData.draw`-capable renderer)
 - `?lowq=0` (keep quality `HIGH`)
 - `?verbose` (Ruffle info logs and a 20k-line page log)
+
+The same options can be set without editing the URL:
+
+| Variable | Effect |
+|---|---|
+| `WAYFER_RENDERER` | `webgl` (default), `wgpu-webgl`, `webgpu`, or `canvas` |
+| `WAYFER_SMOOTH=0` | Disable forced smooth background |
+| `WAYFER_LOWQ=0` | Keep `HIGH` quality |
+| `WAYFER_VERBOSE=1` | Ruffle verbose logs |
 
 If a future game update requires `BitmapData.draw`, try `?renderer=wgpu-webgl`.
 

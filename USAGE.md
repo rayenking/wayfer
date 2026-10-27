@@ -141,6 +141,7 @@ wayfer_get_map_npcs
 wayfer_load_shop   id=<shop-id-from-the-npc>
 wayfer_get_shop
 wayfer_buy_item    name="<item-name>" quantity=1
+wayfer_close_shop
 wayfer_get_inventory
 ```
 
@@ -184,6 +185,12 @@ Optional query parameters:
 - `?smooth=0`
 - `?lowq=0`
 - `?verbose`
+
+Or set `WAYFER_RENDERER`, `WAYFER_SMOOTH=0`, `WAYFER_LOWQ=0`, or
+`WAYFER_VERBOSE=1` before starting the app.
+
+If the in-game inventory or quest UI misbehaves with `webgl`, try
+`WAYFER_RENDERER=wgpu-webgl`; it supports `BitmapData.draw` at the cost of FPS.
 
 If a future game update needs `BitmapData.draw`, try `?renderer=wgpu-webgl`.
 

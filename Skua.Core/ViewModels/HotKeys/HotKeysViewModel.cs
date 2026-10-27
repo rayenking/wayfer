@@ -9,7 +9,7 @@ namespace Skua.Core.ViewModels;
 public partial class HotKeysViewModel : BotControlViewModelBase, IManagedWindow
 {
     public HotKeysViewModel(IHotKeyService hotKeyService, ISettingsService settingsService, IDialogService dialogService)
-        : base("HotKeys", 380, 0)
+        : base("HotKeys", 380, 450)
     {
         _hotKeyService = hotKeyService;
         _settingsService = settingsService;

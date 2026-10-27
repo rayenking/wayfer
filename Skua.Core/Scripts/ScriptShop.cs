@@ -73,6 +73,11 @@ public partial class ScriptShop : IScriptShop
         Wait.ForTrue(() => IsLoaded && ID == id, 20);
     }
 
+    public void Close()
+    {
+        Flash.CallGameFunction("world.rootClass.ui.mcPopup.onClose");
+    }
+
     public bool ProtectFavorites { get; set; } = true;
 
     public List<string> GetUnmetPurchaseRequirements(ShopItem item, int quantity = -1)

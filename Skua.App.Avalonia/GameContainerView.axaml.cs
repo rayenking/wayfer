@@ -34,7 +34,7 @@ public partial class GameContainerView : UserControl
         try
         {
             _server.Start();
-            GameWebView.Navigate(new Uri(_server.BaseUrl));
+            GameWebView.Navigate(new Uri(BuildGameUrl()));
             StatusText.Text = "Loading AQW...";
         }
         catch (Exception ex)
@@ -42,6 +42,22 @@ public partial class GameContainerView : UserControl
             StatusText.Text = $"Game server failed: {ex.Message}";
             Console.WriteLine($"[skua] game server failed: {ex}");
         }
+    }
+
+    private string BuildGameUrl()
+    {
+        List<string> query = new();
+        string renderer = (Environment.GetEnvironmentVariable("WAYFER_RENDERER") ?? string.Empty).Trim().ToLowerInvariant();
+        if (renderer is "webgl" or "wgpu-webgl" or "webgpu" or "canvas")
+            query.Add($"renderer={renderer}");
+        if (Environment.GetEnvironmentVariable("WAYFER_SMOOTH") == "0")
+            query.Add("smooth=0");
+        if (Environment.GetEnvironmentVariable("WAYFER_LOWQ") == "0")
+            query.Add("lowq=0");
+        if (Environment.GetEnvironmentVariable("WAYFER_VERBOSE") == "1")
+            query.Add("verbose=1");
+
+        return query.Count == 0 ? _server.BaseUrl : $"{_server.BaseUrl}?{string.Join("&", query)}";
     }
 
     private void OnWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
